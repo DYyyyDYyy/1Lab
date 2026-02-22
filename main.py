@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-# ==========================================
-# 1. ОТРИМАННЯ ДАНИХ (API)
-# ==========================================
+
+# ОТРИМАННЯ ДАНИХ (API)
+
 def get_elevation_data():
     url = "https://api.open-elevation.com/api/v1/lookup"
     payload = {
@@ -41,7 +41,7 @@ def get_elevation_data():
         return response.json()["results"]
     except Exception as e:
         print(f"Помилка отримання даних: {e}")
-        # Повертаємо фейкові дані, якщо API не відповідає, щоб програма не впала
+
         return [{"latitude": 0, "longitude": 0, "elevation": 0}] * 21
 
 
@@ -177,42 +177,39 @@ class CubicSpline:
             print(f"{i:<3} | {self.a[i]:<10.4f} | {self.b[i]:<10.4f} | {self.c[i]:<10.4f} | {self.d[i]:<10.6f}")
 
 
-# ==========================================
-# 4. ГОЛОВНА ПРОГРАМА
-# ==========================================
+
+#  ГОЛОВНА ПРОГРАМА
+
+
 def main():
-    # 1. Отримуємо дані
+
     results = get_elevation_data()
 
-    # Табуляція вхідних даних (Task 3)
+
     print("Дані успішно отримано! Кількість точок:", len(results))
 
-    # 2. Обчислюємо відстані та висоти
+
     dist_full, elev_full = prepare_data(results)
 
-    # Вивід таблиці (Task 5 part 1)
+
     print("\nТабуляція (відстань, висота):")
     print(f"{'№':<3} | {'Distance (m)':<12} | {'Elevation (m)':<10}")
     for i in range(len(dist_full)):
         print(f"{i:<3d} | {dist_full[i]:<12.2f} | {elev_full[i]:<10.2f}")
 
-    # Завдання 6, 7, 8, 9: Побудова сплайну та вивід коефіцієнтів
+
     spline_full = CubicSpline(dist_full, elev_full)
     spline_full.print_coefficients()
 
-    # ==========================================
-    # ВІЗУАЛІЗАЦІЯ ТА АНАЛІЗ (Tasks 5, 10, 11, 12)
-    # ==========================================
 
-    # Завдання 10: Побудувати графік з різною кількістю вузлів
-    # Ми зімітуємо це, беручи підмножини точок (наприклад, кожну 2-гу, кожну 3-тю)
+
 
     plt.figure(figsize=(14, 10))
 
-    # Гладка лінія для графіків (багато точок)
+
     x_smooth = np.linspace(dist_full[0], dist_full[-1], 500)
 
-    # 1. Повний набір (21 точка)
+    # 1. Повний набір
     y_smooth_full = [spline_full.evaluate(x) for x in x_smooth]
     plt.subplot(2, 2, 1)
     plt.plot(dist_full, elev_full, 'ro', label='Вузли (21 шт)')
@@ -223,9 +220,9 @@ def main():
     plt.legend()
     plt.grid(True)
 
-    # 2. Зменшена кількість вузлів (~11 точок, крок 2)
+    # 2. Зменшена кількість вузлів
     indices_10 = list(range(0, len(dist_full), 2))
-    # Додаємо останню точку, щоб графік був повним
+
     if indices_10[-1] != len(dist_full) - 1:
         indices_10.append(len(dist_full) - 1)
 
@@ -273,14 +270,13 @@ def main():
     plt.grid(True)
     plt.axhline(0, color='black', lw=1)
 
+
     plt.tight_layout()
-    plt.show()
 
 
     # ДОДАТКОВІ ЗАВДАННЯ
-
     print("\n" + "=" * 60)
-    print("ДОДАТКОВА АНАЛІТИКА")
+    print("ДОДАТКОВІ ЗАВДАННЯ")
     print("=" * 60)
 
     # 1. Загальна довжина
@@ -298,12 +294,16 @@ def main():
     print(f"Максимальний спуск: {np.min(grad_arr):.2f} %")
     print(f"Середній градієнт (abs): {np.mean(np.abs(grad_arr)):.2f} %")
 
-    # 3. Механічна енергія (80 кг)
+    # 3. Механічна енергія
     mass = 80
     g = 9.81
     energy_j = mass * g * total_ascent
     print(f"Механічна робота на підйом: {energy_j / 1000:.2f} кДж")
     print(f"Енергія в ккал: {energy_j / 4184:.2f} ккал")
+
+
+
+    plt.show()
 
 
 if __name__ == "__main__":
