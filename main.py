@@ -1,308 +1,177 @@
-import requests
+import csv
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-
-# ОТРИМАННЯ ДАНИХ (API)
-
-def get_elevation_data():
-    url = "https://api.open-elevation.com/api/v1/lookup"
-    payload = {
-        "locations": [
-            {"latitude": 48.164214, "longitude": 24.536044},
-            {"latitude": 48.164983, "longitude": 24.534836},
-            {"latitude": 48.165605, "longitude": 24.534068},
-            {"latitude": 48.166228, "longitude": 24.532915},
-            {"latitude": 48.166777, "longitude": 24.531927},
-            {"latitude": 48.167326, "longitude": 24.530884},
-            {"latitude": 48.167011, "longitude": 24.530061},
-            {"latitude": 48.166053, "longitude": 24.528039},
-            {"latitude": 48.166655, "longitude": 24.526064},
-            {"latitude": 48.166497, "longitude": 24.523574},
-            {"latitude": 48.166128, "longitude": 24.520214},
-            {"latitude": 48.165416, "longitude": 24.517170},
-            {"latitude": 48.164546, "longitude": 24.514640},
-            {"latitude": 48.163412, "longitude": 24.512980},
-            {"latitude": 48.162331, "longitude": 24.511715},
-            {"latitude": 48.162015, "longitude": 24.509462},
-            {"latitude": 48.162147, "longitude": 24.506932},
-            {"latitude": 48.161751, "longitude": 24.504244},
-            {"latitude": 48.161197, "longitude": 24.501793},
-            {"latitude": 48.160580, "longitude": 24.500537},
-            {"latitude": 48.160250, "longitude": 24.500106}
-        ]
-    }
-    headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        return response.json()["results"]
-    except Exception as e:
-        print(f"Помилка отримання даних: {e}")
-
-        return [{"latitude": 0, "longitude": 0, "elevation": 0}] * 21
+def create_csv(filename):
+    with open(filename, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['n', 't'])
+        writer.writerow([1000, 0.2])
+        writer.writerow([2000, 0.45])
+        writer.writerow([5000, 1.5])
+        writer.writerow([10000, 3.2])
+        writer.writerow([20000, 7.5])
 
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000  # Радіус Землі в метрах
-    phi1, phi2 = np.radians(lat1), np.radians(lat2)
-    dphi = np.radians(lat2 - lat1)
-    dlambda = np.radians(lon2 - lon1)
-    a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
-    return 2 * R * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+def read_data(filename):
+    x = []
+    y = []
+    with open(filename, 'r', newline='') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            x.append(float(row['n']))
+            y.append(float(row['t']))
+    return np.array(x), np.array(y)
 
 
-def prepare_data(results):
-    coords = [(p["latitude"], p["longitude"]) for p in results]
-    elevations = np.array([p["elevation"] for p in results])
+def divided_differences(x, y):
+    n = len(y)
+    coef = np.zeros([n, n])
+    coef[:, 0] = y
+    for j in range(1, n):
+        for i in range(n - j):
+            coef[i][j] = (coef[i + 1][j - 1] - coef[i][j - 1]) / (x[i + j] - x[i])
+    return coef[0, :]
 
 
-    distances = [0]
-    for i in range(1, len(coords)):
-        d = haversine(*coords[i - 1], *coords[i])
-        distances.append(distances[-1] + d)
-
-    return np.array(distances), elevations
-
-
-
-class CubicSpline:
-    def __init__(self, x, y):
-        self.x = np.array(x)
-        self.y = np.array(y)
-        self.n = len(x)
-        self.h = np.diff(self.x)
-
-        self.a = None
-        self.b = None
-        self.c = None
-        self.d = None
-
-        self.build_spline()
-
-    def build_spline(self):
-        n = self.n
-        h = self.h
-        y = self.y
+def newton_polynomial(coef, x_data, x):
+    n = len(x_data)
+    p = coef[0]
+    w = 1.0
+    for k in range(1, n):
+        w *= (x - x_data[k - 1])
+        p += w * coef[k]
+    return p
 
 
+def lagrange_polynomial(x_data, y_data, x):
+    n = len(x_data)
+    p = 0.0
+    for i in range(n):
+        l = 1.0
+        for j in range(n):
+            if i != j:
+                l *= (x - x_data[j]) / (x_data[i] - x_data[j])
+        p += y_data[i] * l
+    return p
 
 
-        alpha = np.zeros(n)  # нижня діагональ
-        beta = np.zeros(n)  # головна діагональ
-        gamma = np.zeros(n)  # верхня діагональ
-        delta = np.zeros(n)  # права частина (RHS)
+def w_n_function(x_data, x):
+    w = 1.0
+    for xi in x_data:
+        w *= (x - xi)
+    return w
 
 
-        beta[0] = 1.0
-        delta[0] = 0.0
-        beta[n - 1] = 1.0
-        delta[n - 1] = 0.0
+def baseline_function(x):
+    return 4.76e-5 * np.power(x, 1.209)
 
 
-        for i in range(1, n - 1):
-            alpha[i] = h[i - 1]
-            beta[i] = 2 * (h[i - 1] + h[i])
-            gamma[i] = h[i]
-            rhs = 3 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])
-            delta[i] = rhs
+def plot_three_panels(title, x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot):
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(title, fontsize=14)
 
+    axes[0].plot(x_plot, y_true, '--k', label='f(x) (baseline)')
+    axes[0].plot(x_plot, y_pred_newton, '-b', linewidth=4, alpha=0.5, label='N(x) (Newton)')
+    axes[0].plot(x_plot, y_pred_lagrange, '--', color='orange', label='L(x) (Lagrange)')
+    axes[0].scatter(x_nodes, y_nodes, color='red', zorder=5, label='Nodes')
+    axes[0].set_title('Function and Interpolation')
+    axes[0].set_xlabel('Розмір (кількість завдань)')
+    axes[0].set_ylabel('Вартість ($)')
+    axes[0].grid(True)
+    axes[0].legend()
 
-        self.matrix_coeffs = (alpha, beta, gamma, delta)
+    error = np.abs(np.array(y_true) - np.array(y_pred_newton))
+    axes[1].plot(x_plot, error, color='orange', label='e(x) = |f(x) - N(x)|')
+    axes[1].set_title('Absolute Error e(x)')
+    axes[1].set_xlabel('Розмір (кількість завдань)')
+    axes[1].set_ylabel('Абсолютна похибка ($)')
+    axes[1].grid(True)
+    axes[1].legend()
 
-        # Метод прогонки
-        self.c = self.thomas_algorithm(alpha, beta, gamma, delta)
+    axes[2].plot(x_plot, w_plot, color='green', label='w_n(x)')
+    axes[2].set_title('w_n(x)')
+    axes[2].set_xlabel('Розмір (кількість завдань)')
+    axes[2].set_ylabel('Значення полінома w_n(x)')
+    axes[2].grid(True)
+    axes[2].legend()
 
-
-        self.a = y[:-1]
-        self.b = np.zeros(n - 1)
-        self.d = np.zeros(n - 1)
-
-        for i in range(n - 1):
-
-            self.d[i] = (self.c[i + 1] - self.c[i]) / (3 * h[i])
-
-
-            self.b[i] = (y[i + 1] - y[i]) / h[i] - (h[i] / 3) * (self.c[i + 1] + 2 * self.c[i])
-
-
-    def thomas_algorithm(self, alpha, beta, gamma, delta):
-        n = len(delta)
-
-        A = np.zeros(n)
-        B = np.zeros(n)
-
-        A[0] = -gamma[0] / beta[0] if beta[0] != 0 else 0
-        B[0] = delta[0] / beta[0] if beta[0] != 0 else 0
-
-        for i in range(1, n - 1):
-            denom = beta[i] + alpha[i] * A[i - 1]
-            A[i] = -gamma[i] / denom
-            B[i] = (delta[i] - alpha[i] * B[i - 1]) / denom
-
-
-        x = np.zeros(n)
-        x[n - 1] = (delta[n - 1] - alpha[n - 1] * B[n - 2]) / (beta[n - 1] + alpha[n - 1] * A[n - 2])
-
-        for i in range(n - 2, -1, -1):
-            x[i] = A[i] * x[i + 1] + B[i]
-
-        return x
-
-    def evaluate(self, x_eval):
-
-
-        if x_eval < self.x[0] or x_eval > self.x[-1]:
-            return None
-
-
-        i = np.searchsorted(self.x, x_eval) - 1
-        if i < 0: i = 0
-        if i >= len(self.b): i = len(self.b) - 1
-
-        dx = x_eval - self.x[i]
-
-
-        return self.a[i] + self.b[i] * dx + self.c[i] * (dx ** 2) + self.d[i] * (dx ** 3)
-
-    def print_coefficients(self):
-        print("\n" + "=" * 60)
-        print("РЕЗУЛЬТАТИ РОЗРАХУНКУ КОЕФІЦІЄНТІВ СПЛАЙНІВ")
-        print("=" * 60)
-        print(f"{'i':<3} | {'a_i':<10} | {'b_i':<10} | {'c_i':<10} | {'d_i':<10}")
-        print("-" * 60)
-        for i in range(len(self.b)):
-            print(f"{i:<3} | {self.a[i]:<10.4f} | {self.b[i]:<10.4f} | {self.c[i]:<10.4f} | {self.d[i]:<10.6f}")
-
-
-
-#  ГОЛОВНА ПРОГРАМА
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
+    filename = "data_var4.csv"
+    create_csv(filename)
+    x_csv, y_csv = read_data(filename)
 
-    results = get_elevation_data()
+    coef_csv = divided_differences(x_csv, y_csv)
+    target_x = 15000
+    forecast_newton = newton_polynomial(coef_csv, x_csv, target_x)
+    forecast_lagrange = lagrange_polynomial(x_csv, y_csv, target_x)
 
+    x_plot = np.linspace(min(x_csv), max(x_csv), 200)
+    y_true = baseline_function(x_plot)
+    y_pred_newton = [newton_polynomial(coef_csv, x_csv, xi) for xi in x_plot]
+    y_pred_lagrange = [lagrange_polynomial(x_csv, y_csv, xi) for xi in x_plot]
+    w_plot = [w_n_function(x_csv, xi) for xi in x_plot]
+    plot_three_panels("Base Model (from CSV data)", x_plot, y_true, y_pred_newton, y_pred_lagrange, x_csv, y_csv,
+                      w_plot)
 
-    print("Дані успішно отримано! Кількість точок:", len(results))
+    a_fixed, b_fixed = 1000, 20000
+    for n in [5, 10, 20]:
+        x_nodes = np.linspace(a_fixed, b_fixed, n)
+        y_nodes = baseline_function(x_nodes)
+        coef = divided_differences(x_nodes, y_nodes)
 
+        x_plot = np.linspace(a_fixed, b_fixed, 400)
+        y_true = baseline_function(x_plot)
+        y_pred_newton = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot]
+        y_pred_lagrange = [lagrange_polynomial(x_nodes, y_nodes, xi) for xi in x_plot]
+        w_plot = [w_n_function(x_nodes, xi) for xi in x_plot]
 
-    dist_full, elev_full = prepare_data(results)
+        plot_three_panels(f"Fixed Interval [{a_fixed}, {b_fixed}], Nodes n={n}",
+                          x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot)
 
+    h_step = 1000
+    a_start = 1000
+    for n in [5, 10, 20]:
+        b_end = a_start + h_step * (n - 1)
+        x_nodes = np.linspace(a_start, b_end, n)
+        y_nodes = baseline_function(x_nodes)
+        coef = divided_differences(x_nodes, y_nodes)
 
-    print("\nТабуляція (відстань, висота):")
-    print(f"{'№':<3} | {'Distance (m)':<12} | {'Elevation (m)':<10}")
-    for i in range(len(dist_full)):
-        print(f"{i:<3d} | {dist_full[i]:<12.2f} | {elev_full[i]:<10.2f}")
+        x_plot = np.linspace(a_start, b_end, 400)
+        y_true = baseline_function(x_plot)
+        y_pred_newton = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot]
+        y_pred_lagrange = [lagrange_polynomial(x_nodes, y_nodes, xi) for xi in x_plot]
+        w_plot = [w_n_function(x_nodes, xi) for xi in x_plot]
 
+        plot_three_panels(f"Fixed h={h_step}, Interval [{a_start}, {b_end}], n={n}",
+                          x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot)
 
-    spline_full = CubicSpline(dist_full, elev_full)
-    spline_full.print_coefficients()
+    plt.figure(figsize=(12, 7))
+    a_runge, b_runge = 1000, 80000
+    x_plot_runge = np.linspace(a_runge, b_runge, 400)
+    y_true_runge = baseline_function(x_plot_runge)
+    plt.plot(x_plot_runge, y_true_runge, '--k', linewidth=2, label='f(x) (baseline)')
 
+    colors = ['blue', 'green', 'red']
+    for i, n in enumerate([10, 20, 30]):
+        x_nodes = np.linspace(a_runge, b_runge, n)
+        y_nodes = baseline_function(x_nodes)
+        coef = divided_differences(x_nodes, y_nodes)
+        y_pred_runge = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot_runge]
+        plt.plot(x_plot_runge, y_pred_runge, color=colors[i], label=f'N(x), n={n}')
 
-
-
-    plt.figure(figsize=(14, 10))
-
-
-    x_smooth = np.linspace(dist_full[0], dist_full[-1], 500)
-
-    # 1. Повний набір
-    y_smooth_full = [spline_full.evaluate(x) for x in x_smooth]
-    plt.subplot(2, 2, 1)
-    plt.plot(dist_full, elev_full, 'ro', label='Вузли (21 шт)')
-    plt.plot(x_smooth, y_smooth_full, 'b-', label='Сплайн (Всі точки)')
-    plt.title("Інтерполяція: Всі 21 точка")
-    plt.xlabel("Відстань (м)")
-    plt.ylabel("Висота (м)")
+    plt.title('Аналіз ефекту Рунге (Штучно розширений інтервал до 80000)', fontsize=14)
+    plt.xlabel('Розмір (кількість завдань)')
+    plt.ylabel('Вартість ($)')
+    plt.grid(True)
     plt.legend()
-    plt.grid(True)
-
-    # 2. Зменшена кількість вузлів
-    indices_10 = list(range(0, len(dist_full), 2))
-
-    if indices_10[-1] != len(dist_full) - 1:
-        indices_10.append(len(dist_full) - 1)
-
-    dist_10 = dist_full[indices_10]
-    elev_10 = elev_full[indices_10]
-    spline_10 = CubicSpline(dist_10, elev_10)
-    y_smooth_10 = [spline_10.evaluate(x) for x in x_smooth]
-
-    plt.subplot(2, 2, 2)
-    plt.plot(dist_full, elev_full, 'g.', alpha=0.3, label='Реальний рельєф')  # Фон
-    plt.plot(dist_10, elev_10, 'ro', label=f'Вузли ({len(dist_10)} шт)')
-    plt.plot(x_smooth, y_smooth_10, 'b--', label='Сплайн (Розріджений)')
-    plt.title(f"Інтерполяція: ~10 точок")
-    plt.xlabel("Відстань (м)")
-    plt.grid(True)
-    plt.legend()
-
-
-    error = np.abs(np.array(y_smooth_full) - np.array(y_smooth_10))
-
-    plt.subplot(2, 2, 3)
-    plt.plot(x_smooth, error, 'r-')
-    plt.title("Похибка інтерполяції (Abs Error)")
-    plt.xlabel("Відстань (м)")
-    plt.ylabel("Похибка (м)")
-    plt.grid(True)
-
-
-    gradients = []
-    for x in x_smooth:
-
-        idx = np.searchsorted(spline_full.x, x) - 1
-        if idx < 0: idx = 0
-        if idx >= len(spline_full.b): idx = len(spline_full.b) - 1
-
-        dx = x - spline_full.x[idx]
-        grad = spline_full.b[idx] + 2 * spline_full.c[idx] * dx + 3 * spline_full.d[idx] * (dx ** 2)
-        gradients.append(grad * 100)  # у відсотках
-
-    plt.subplot(2, 2, 4)
-    plt.plot(x_smooth, gradients, 'purple')
-    plt.title("Градієнт (крутизна) маршруту %")
-    plt.xlabel("Відстань (м)")
-    plt.ylabel("Ухил (%)")
-    plt.grid(True)
-    plt.axhline(0, color='black', lw=1)
-
-
+    plt.ylim(min(y_true_runge) - 5, max(y_true_runge) + 20)
     plt.tight_layout()
-
-
-    # ДОДАТКОВІ ЗАВДАННЯ
-    print("\n" + "=" * 60)
-    print("ДОДАТКОВІ ЗАВДАННЯ")
-    print("=" * 60)
-
-    # 1. Загальна довжина
-    print(f"Загальна довжина маршруту: {dist_full[-1]:.2f} м")
-
-    # Набір і спуск
-    total_ascent = np.sum(np.maximum(np.diff(elev_full), 0))
-    total_descent = np.sum(np.maximum(-np.diff(elev_full), 0))
-    print(f"Сумарний набір висоти: {total_ascent:.2f} м")
-    print(f"Сумарний спуск: {total_descent:.2f} м")
-
-    # 2. Статистика градієнта
-    grad_arr = np.array(gradients)
-    print(f"Максимальний підйом: {np.max(grad_arr):.2f} %")
-    print(f"Максимальний спуск: {np.min(grad_arr):.2f} %")
-    print(f"Середній градієнт (abs): {np.mean(np.abs(grad_arr)):.2f} %")
-
-    # 3. Механічна енергія
-    mass = 80
-    g = 9.81
-    energy_j = mass * g * total_ascent
-    print(f"Механічна робота на підйом: {energy_j / 1000:.2f} кДж")
-    print(f"Енергія в ккал: {energy_j / 4184:.2f} ккал")
-
-
-
     plt.show()
 
 
