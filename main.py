@@ -1,177 +1,213 @@
 import csv
-import numpy as np
+import math
 import matplotlib.pyplot as plt
+import numpy as np
 
 
-def create_csv(filename):
-    with open(filename, 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['n', 't'])
-        writer.writerow([1000, 0.2])
-        writer.writerow([2000, 0.45])
-        writer.writerow([5000, 1.5])
-        writer.writerow([10000, 3.2])
-        writer.writerow([20000, 7.5])
+
+def create_sample_csv(filename='data.csv'):
+    data = [
+        (1, -2), (2, 0), (3, 5), (4, 10), (5, 15), (6, 20),
+        (7, 23), (8, 22), (9, 17), (10, 10), (11, 5), (12, 0),
+        (13, -10), (14, 3), (15, 7), (16, 13), (17, 19), (18, 20),
+        (19, 22), (20, 21), (21, 18), (22, 15), (23, 10), (24, 3)
+    ]
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Month', 'Temp'])
+        writer.writerows(data)
 
 
-def read_data(filename):
-    x = []
-    y = []
-    with open(filename, 'r', newline='') as file:
-        reader = csv.DictReader(file)
+def read_data(filename='data.csv'):
+    x, y = [], []
+    with open(filename, 'r') as f:
+        reader = csv.reader(f)
+        next(reader)
         for row in reader:
-            x.append(float(row['n']))
-            y.append(float(row['t']))
-    return np.array(x), np.array(y)
+            x.append(float(row[0]))
+            y.append(float(row[1]))
+    return x, y
 
 
-def divided_differences(x, y):
-    n = len(y)
-    coef = np.zeros([n, n])
-    coef[:, 0] = y
-    for j in range(1, n):
-        for i in range(n - j):
-            coef[i][j] = (coef[i + 1][j - 1] - coef[i][j - 1]) / (x[i + j] - x[i])
-    return coef[0, :]
+
+def form_matrix(x, m):
+    A = [[0.0] * (m + 1) for _ in range(m + 1)]
+    for i in range(m + 1):
+        for j in range(m + 1):
+            A[i][j] = sum(xi ** (i + j) for xi in x)
+    return A
 
 
-def newton_polynomial(coef, x_data, x):
-    n = len(x_data)
-    p = coef[0]
-    w = 1.0
-    for k in range(1, n):
-        w *= (x - x_data[k - 1])
-        p += w * coef[k]
-    return p
+def form_vector(x, y, m):
+    b = [0.0] * (m + 1)
+    for i in range(m + 1):
+        b[i] = sum(yi * (xi ** i) for xi, yi in zip(x, y))
+    return b
 
 
-def lagrange_polynomial(x_data, y_data, x):
-    n = len(x_data)
-    p = 0.0
-    for i in range(n):
-        l = 1.0
-        for j in range(n):
-            if i != j:
-                l *= (x - x_data[j]) / (x_data[i] - x_data[j])
-        p += y_data[i] * l
-    return p
+def gauss_solve(A, b):
+    n = len(b)
+    A_copy = [row[:] for row in A]
+    b_copy = b[:]
+
+    # Прямий хід з вибором головного елемента
+    for k in range(n - 1):
+        max_row = k
+        for i in range(k + 1, n):
+            if abs(A_copy[i][k]) > abs(A_copy[max_row][k]):
+                max_row = i
+        A_copy[k], A_copy[max_row] = A_copy[max_row], A_copy[k]
+        b_copy[k], b_copy[max_row] = b_copy[max_row], b_copy[k]
+
+        for i in range(k + 1, n):
+            if A_copy[k][k] == 0:
+                continue
+            factor = A_copy[i][k] / A_copy[k][k]
+            for j in range(k, n):
+                A_copy[i][j] -= factor * A_copy[k][j]
+            b_copy[i] -= factor * b_copy[k]
+
+    # Зворотний хід
+    x_sol = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        s = sum(A_copy[i][j] * x_sol[j] for j in range(i + 1, n))
+        if A_copy[i][i] != 0:
+            x_sol[i] = (b_copy[i] - s) / A_copy[i][i]
+        else:
+            x_sol[i] = 0.0
+    return x_sol
 
 
-def w_n_function(x_data, x):
-    w = 1.0
-    for xi in x_data:
-        w *= (x - xi)
-    return w
+def evaluate_poly(x_list, coef):
+    return [sum(c * (xi ** i) for i, c in enumerate(coef)) for xi in x_list]
 
 
-def baseline_function(x):
-    return 4.76e-5 * np.power(x, 1.209)
+def variance(y_true, y_approx):
+    n = len(y_true)
+    return sum((yt - ya) ** 2 for yt, ya in zip(y_true, y_approx)) / n
 
 
-def plot_three_panels(title, x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot):
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle(title, fontsize=14)
 
-    axes[0].plot(x_plot, y_true, '--k', label='f(x) (baseline)')
-    axes[0].plot(x_plot, y_pred_newton, '-b', linewidth=4, alpha=0.5, label='N(x) (Newton)')
-    axes[0].plot(x_plot, y_pred_lagrange, '--', color='orange', label='L(x) (Lagrange)')
-    axes[0].scatter(x_nodes, y_nodes, color='red', zorder=5, label='Nodes')
-    axes[0].set_title('Function and Interpolation')
-    axes[0].set_xlabel('Розмір (кількість завдань)')
-    axes[0].set_ylabel('Вартість ($)')
-    axes[0].grid(True)
-    axes[0].legend()
+def plot_all_errors(x, y, coefs_to_plot, n):
+    x0, xn = x[0], x[-1]
+    h1 = (xn - x0) / (20 * n)
+    x_fine = np.arange(x0, xn + h1, h1)
+    y_fine_true = np.interp(x_fine, x, y)
 
-    error = np.abs(np.array(y_true) - np.array(y_pred_newton))
-    axes[1].plot(x_plot, error, color='orange', label='e(x) = |f(x) - N(x)|')
-    axes[1].set_title('Absolute Error e(x)')
-    axes[1].set_xlabel('Розмір (кількість завдань)')
-    axes[1].set_ylabel('Абсолютна похибка ($)')
-    axes[1].grid(True)
-    axes[1].legend()
+    num_plots = len(coefs_to_plot)
+    cols = min(num_plots, 5)
+    rows = math.ceil(num_plots / cols)
 
-    axes[2].plot(x_plot, w_plot, color='green', label='w_n(x)')
-    axes[2].set_title('w_n(x)')
-    axes[2].set_xlabel('Розмір (кількість завдань)')
-    axes[2].set_ylabel('Значення полінома w_n(x)')
-    axes[2].grid(True)
-    axes[2].legend()
+    fig, axes = plt.subplots(rows, cols, figsize=(3.5 * cols, 4 * rows), num="Вікно 2: Табуляція похибок", sharey=True)
+    fig.suptitle(f"Табуляція похибки ε(x) для m = 1...{num_plots}", fontsize=16)
+
+
+    if not isinstance(axes, np.ndarray):
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+
+    for m_idx in range(num_plots):
+        m = m_idx + 1
+        coef = coefs_to_plot[m_idx]
+        y_fine_approx = evaluate_poly(x_fine, coef)
+        error_fine = [abs(yt - ya) for yt, ya in zip(y_fine_true, y_fine_approx)]
+
+        ax = axes[m_idx]
+        ax.plot(x_fine, error_fine, 'r-')
+        ax.set_title(f"Степінь m={m}")
+        ax.grid(True)
+
+        if m_idx >= (rows - 1) * cols:
+            ax.set_xlabel("Місяць")
+        if m_idx % cols == 0:
+            ax.set_ylabel("Похибка")
+
+
+    for j in range(num_plots, len(axes)):
+        fig.delaxes(axes[j])
 
     plt.tight_layout()
-    plt.show()
+    plt.subplots_adjust(top=0.9)
+
 
 
 def main():
-    filename = "data_var4.csv"
-    create_csv(filename)
-    x_csv, y_csv = read_data(filename)
+    create_sample_csv()
+    x, y = read_data()
+    n_nodes = len(x)
 
-    coef_csv = divided_differences(x_csv, y_csv)
-    target_x = 15000
-    forecast_newton = newton_polynomial(coef_csv, x_csv, target_x)
-    forecast_lagrange = lagrange_polynomial(x_csv, y_csv, target_x)
+    max_degree = 10
+    limit_m = 10  # <--- Обмеження
 
-    x_plot = np.linspace(min(x_csv), max(x_csv), 200)
-    y_true = baseline_function(x_plot)
-    y_pred_newton = [newton_polynomial(coef_csv, x_csv, xi) for xi in x_plot]
-    y_pred_lagrange = [lagrange_polynomial(x_csv, y_csv, xi) for xi in x_plot]
-    w_plot = [w_n_function(x_csv, xi) for xi in x_plot]
-    plot_three_panels("Base Model (from CSV data)", x_plot, y_true, y_pred_newton, y_pred_lagrange, x_csv, y_csv,
-                      w_plot)
+    variances = []
+    all_coefs = []
 
-    a_fixed, b_fixed = 1000, 20000
-    for n in [5, 10, 20]:
-        x_nodes = np.linspace(a_fixed, b_fixed, n)
-        y_nodes = baseline_function(x_nodes)
-        coef = divided_differences(x_nodes, y_nodes)
+    best_m = 1
+    min_var = float('inf')
+    best_coef = []
 
-        x_plot = np.linspace(a_fixed, b_fixed, 400)
-        y_true = baseline_function(x_plot)
-        y_pred_newton = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot]
-        y_pred_lagrange = [lagrange_polynomial(x_nodes, y_nodes, xi) for xi in x_plot]
-        w_plot = [w_n_function(x_nodes, xi) for xi in x_plot]
+    print("--- Дисперсії для різних степенів полінома ---")
+    for m in range(1, max_degree + 1):
+        A = form_matrix(x, m)
+        b = form_vector(x, y, m)
+        coef = gauss_solve(A, b)
+        all_coefs.append(coef)
 
-        plot_three_panels(f"Fixed Interval [{a_fixed}, {b_fixed}], Nodes n={n}",
-                          x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot)
+        y_approx = evaluate_poly(x, coef)
+        var = variance(y, y_approx)
+        variances.append(var)
+        print(f"Степінь m = {m:2d} | Дисперсія = {var:.4f}")
 
-    h_step = 1000
-    a_start = 1000
-    for n in [5, 10, 20]:
-        b_end = a_start + h_step * (n - 1)
-        x_nodes = np.linspace(a_start, b_end, n)
-        y_nodes = baseline_function(x_nodes)
-        coef = divided_differences(x_nodes, y_nodes)
+        if var < min_var and m <= limit_m:
+            min_var = var
+            best_m = m
+            best_coef = coef
 
-        x_plot = np.linspace(a_start, b_end, 400)
-        y_true = baseline_function(x_plot)
-        y_pred_newton = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot]
-        y_pred_lagrange = [lagrange_polynomial(x_nodes, y_nodes, xi) for xi in x_plot]
-        w_plot = [w_n_function(x_nodes, xi) for xi in x_plot]
+    print(f"\n=> Для безпечної апроксимації та прогнозу обрано степінь: m = {best_m}")
 
-        plot_three_panels(f"Fixed h={h_step}, Interval [{a_start}, {b_end}], n={n}",
-                          x_plot, y_true, y_pred_newton, y_pred_lagrange, x_nodes, y_nodes, w_plot)
+    y_opt_approx = evaluate_poly(x, best_coef)
+    x_future = [25, 26, 27]
+    y_future = evaluate_poly(x_future, best_coef)
 
-    plt.figure(figsize=(12, 7))
-    a_runge, b_runge = 1000, 80000
-    x_plot_runge = np.linspace(a_runge, b_runge, 400)
-    y_true_runge = baseline_function(x_plot_runge)
-    plt.plot(x_plot_runge, y_true_runge, '--k', linewidth=2, label='f(x) (baseline)')
+    print("\n--- Прогноз на наступні 3 місяці ---")
+    for xf, yf in zip(x_future, y_future):
+        print(f"Місяць {xf}: {yf:.2f} градусів")
 
-    colors = ['blue', 'green', 'red']
-    for i, n in enumerate([10, 20, 30]):
-        x_nodes = np.linspace(a_runge, b_runge, n)
-        y_nodes = baseline_function(x_nodes)
-        coef = divided_differences(x_nodes, y_nodes)
-        y_pred_runge = [newton_polynomial(coef, x_nodes, xi) for xi in x_plot_runge]
-        plt.plot(x_plot_runge, y_pred_runge, color=colors[i], label=f'N(x), n={n}')
+    errors = [abs(yt - ya) for yt, ya in zip(y, y_opt_approx)]
 
-    plt.title('Аналіз ефекту Рунге (Штучно розширений інтервал до 80000)', fontsize=14)
-    plt.xlabel('Розмір (кількість завдань)')
-    plt.ylabel('Вартість ($)')
+
+    plt.figure(num="Вікно 1: Основні результати", figsize=(14, 10))
+
+    plt.subplot(2, 2, 1)
+    plt.plot(range(1, max_degree + 1), variances, marker='o', color='purple')
+    plt.title("Залежність дисперсії від степеня m")
+    plt.xlabel("Степінь полінома (m)")
+    plt.ylabel("Дисперсія")
     plt.grid(True)
+
+    plt.subplot(2, 2, 2)
+    plt.plot(x, y, 'ro', label="Фактичні дані")
+    plt.plot(x, y_opt_approx, 'b-', label=f"Апроксимація (m={best_m})")
+    plt.plot(x_future, y_future, 'gP', markersize=10, label="Прогноз")
+    plt.title("Апроксимація та екстраполяція")
+    plt.xlabel("Місяць")
+    plt.ylabel("Температура")
     plt.legend()
-    plt.ylim(min(y_true_runge) - 5, max(y_true_runge) + 20)
+    plt.grid(True)
+
+    plt.subplot(2, 2, 3)
+    plt.plot(x, errors, 'r-', marker='x')
+    plt.title("Похибка апроксимації ε(x) у вузлах")
+    plt.xlabel("Місяць")
+    plt.ylabel("Абсолютна похибка")
+    plt.grid(True)
     plt.tight_layout()
+
+
+    plot_all_errors(x, y, all_coefs[:limit_m], n_nodes)
+
+
     plt.show()
 
 
