@@ -3,8 +3,6 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-
 def create_sample_csv(filename='data.csv'):
     data = [
         (1, -2), (2, 0), (3, 5), (4, 10), (5, 15), (6, 20),
@@ -17,7 +15,6 @@ def create_sample_csv(filename='data.csv'):
         writer.writerow(['Month', 'Temp'])
         writer.writerows(data)
 
-
 def read_data(filename='data.csv'):
     x, y = [], []
     with open(filename, 'r') as f:
@@ -28,8 +25,6 @@ def read_data(filename='data.csv'):
             y.append(float(row[1]))
     return x, y
 
-
-
 def form_matrix(x, m):
     A = [[0.0] * (m + 1) for _ in range(m + 1)]
     for i in range(m + 1):
@@ -37,13 +32,11 @@ def form_matrix(x, m):
             A[i][j] = sum(xi ** (i + j) for xi in x)
     return A
 
-
 def form_vector(x, y, m):
     b = [0.0] * (m + 1)
     for i in range(m + 1):
         b[i] = sum(yi * (xi ** i) for xi, yi in zip(x, y))
     return b
-
 
 def gauss_solve(A, b):
     n = len(b)
@@ -77,16 +70,12 @@ def gauss_solve(A, b):
             x_sol[i] = 0.0
     return x_sol
 
-
 def evaluate_poly(x_list, coef):
     return [sum(c * (xi ** i) for i, c in enumerate(coef)) for xi in x_list]
-
 
 def variance(y_true, y_approx):
     n = len(y_true)
     return sum((yt - ya) ** 2 for yt, ya in zip(y_true, y_approx)) / n
-
-
 
 def plot_all_errors(x, y, coefs_to_plot, n):
     x0, xn = x[0], x[-1]
@@ -95,17 +84,11 @@ def plot_all_errors(x, y, coefs_to_plot, n):
     y_fine_true = np.interp(x_fine, x, y)
 
     num_plots = len(coefs_to_plot)
-    cols = min(num_plots, 5)
-    rows = math.ceil(num_plots / cols)
-
-    fig, axes = plt.subplots(rows, cols, figsize=(3.5 * cols, 4 * rows), num="Вікно 2: Табуляція похибок", sharey=True)
-    fig.suptitle(f"Табуляція похибки ε(x) для m = 1...{num_plots}", fontsize=16)
 
 
-    if not isinstance(axes, np.ndarray):
-        axes = [axes]
-    else:
-        axes = axes.flatten()
+    plt.figure(num="Вікно 2: Табуляція похибок", figsize=(12, 7))
+    plt.title(f"Табуляція похибки ε(x) для m = 1...{num_plots}", fontsize=16)
+
 
     for m_idx in range(num_plots):
         m = m_idx + 1
@@ -113,24 +96,13 @@ def plot_all_errors(x, y, coefs_to_plot, n):
         y_fine_approx = evaluate_poly(x_fine, coef)
         error_fine = [abs(yt - ya) for yt, ya in zip(y_fine_true, y_fine_approx)]
 
-        ax = axes[m_idx]
-        ax.plot(x_fine, error_fine, 'r-')
-        ax.set_title(f"Степінь m={m}")
-        ax.grid(True)
+        plt.plot(x_fine, error_fine, label=f"m={m}")
 
-        if m_idx >= (rows - 1) * cols:
-            ax.set_xlabel("Місяць")
-        if m_idx % cols == 0:
-            ax.set_ylabel("Похибка")
-
-
-    for j in range(num_plots, len(axes)):
-        fig.delaxes(axes[j])
-
+    plt.xlabel("Місяць")
+    plt.ylabel("Похибка")
+    plt.grid(True)
+    plt.legend() # Додаємо легенду
     plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
-
-
 
 def main():
     create_sample_csv()
@@ -138,7 +110,7 @@ def main():
     n_nodes = len(x)
 
     max_degree = 10
-    limit_m = 10  # <--- Обмеження
+    limit_m = 10 # <--- Обмеження
 
     variances = []
     all_coefs = []
@@ -176,7 +148,6 @@ def main():
 
     errors = [abs(yt - ya) for yt, ya in zip(y, y_opt_approx)]
 
-
     plt.figure(num="Вікно 1: Основні результати", figsize=(14, 10))
 
     plt.subplot(2, 2, 1)
@@ -204,12 +175,9 @@ def main():
     plt.grid(True)
     plt.tight_layout()
 
-
     plot_all_errors(x, y, all_coefs[:limit_m], n_nodes)
 
-
     plt.show()
-
 
 if __name__ == "__main__":
     main()
