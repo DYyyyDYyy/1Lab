@@ -1,158 +1,94 @@
 import numpy as np
 
 
-try:
-    HIGH_PRECISION = np.float128
-except AttributeError:
-    HIGH_PRECISION = np.longdouble
-
-
-def write_matrix_to_file(filename, matrix):
-    with open(filename, 'w') as f:
-        for row in matrix:
-
-            f.write(" ".join(f"{val:.18f}" for val in row) + "\n")
-
-
-def write_vector_to_file(filename, vector):
-    with open(filename, 'w') as f:
-        for val in vector:
-            f.write(f"{val:.18f}\n")
-
-
-def read_matrix_from_file(filename):
-    matrix = []
-    with open(filename, 'r') as f:
-        for line in f:
-            matrix.append([float(x) for x in line.split()])
-    return np.array(matrix, dtype=HIGH_PRECISION)
-
-
-def read_vector_from_file(filename):
-    vector = []
-    with open(filename, 'r') as f:
-        for line in f:
-            vector.append(float(line.strip()))
-    return np.array(vector, dtype=HIGH_PRECISION)
-
-
-def mat_vec_mult(A, X):
-    n = len(A)
-    B = np.zeros(n, dtype=HIGH_PRECISION)
+def generate_matrix(n):
+    A = np.random.uniform(-10, 10, (n, n)).astype(np.float128)
     for i in range(n):
-        B[i] = sum(A[i, j] * X[j] for j in range(n))
-    return B
+        row_sum = np.sum(np.abs(A[i])) - np.abs(A[i, i])
+        A[i, i] = row_sum + np.random.uniform(1, 10)
+    return A
 
 
-def vector_norm(V):
-    return np.max(np.abs(V))
+def simple_iteration(A, B, x0, eps):
+    norm_A = np.linalg.norm(A, np.inf)
+    tau = np.float128(1.0) / norm_A
+    x_k = np.copy(x0)
+    iters = 0
+    while True:
+        residual = np.dot(A, x_k) - B
+        err = np.linalg.norm(residual)
+        if err <= eps:
+            break
+        x_k = x_k - tau * residual
+        iters += 1
+    return x_k, iters, err
 
 
-def vector_sub(V1, V2):
-    return V1 - V2
+def jacobi(A, B, x0, eps):
+    D = np.diag(np.diag(A))
+    LU = A - D
+    x_k = np.copy(x0)
+    iters = 0
+    D_inv = np.diag(np.float128(1.0) / np.diag(D))
+    while True:
+        x_new = np.dot(D_inv, B - np.dot(LU, x_k))
+        err = np.linalg.norm(x_new - x_k)
+        if err < eps:
+            break
+        x_k = x_new
+        iters += 1
+    return x_new, iters, err
 
 
-def vector_add(V1, V2):
-    return V1 + V2
-
-
-def lu_decomposition(A):
+def gauss_seidel(A, B, x0, eps):
     n = len(A)
-    L = np.zeros((n, n), dtype=HIGH_PRECISION)
-    U = np.zeros((n, n), dtype=HIGH_PRECISION)
-
-    for i in range(n):
-        U[i, i] = 1.0
-
-    for k in range(n):
-        for i in range(k, n):
-            sum_val = sum(L[i, j] * U[j, k] for j in range(k))
-            L[i, k] = A[i, k] - sum_val
-
-        for i in range(k + 1, n):
-            sum_val = sum(L[k, j] * U[j, i] for j in range(k))
-            U[k, i] = (A[k, i] - sum_val) / L[k, k]
-
-    return L, U
-
-
-def solve_lu(L, U, B):
-    n = len(B)
-    Z = np.zeros(n, dtype=HIGH_PRECISION)
-    X = np.zeros(n, dtype=HIGH_PRECISION)
-
-    Z[0] = B[0] / L[0, 0]
-    for k in range(1, n):
-        sum_val = sum(L[k, j] * Z[j] for j in range(k))
-        Z[k] = (B[k] - sum_val) / L[k, k]
-
-    X[n - 1] = Z[n - 1]
-    for k in range(n - 2, -1, -1):
-        sum_val = sum(U[k, j] * X[j] for j in range(k + 1, n))
-        X[k] = Z[k] - sum_val
-
-    return X
-
+    x_k = np.copy(x0)
+    iters = 0
+    while True:
+        x_old = np.copy(x_k)
+        for i in range(n):
+            s1 = np.dot(A[i, :i], x_k[:i])
+            s2 = np.dot(A[i, i + 1:], x_old[i + 1:])
+            x_k[i] = (B[i] - s1 - s2) / A[i, i]
+        err = np.linalg.norm(x_k - x_old)
+        if err < eps:
+            break
+        iters += 1
+    return x_k, iters, err
 
 
 n = 100
+eps = np.float128(1e-14)
 
-# Генеруємо матрицю одразу з типом HIGH_PRECISION
-A_initial = np.random.uniform(-10.0, 10.0, (n, n)).astype(HIGH_PRECISION)
-for i in range(n):
-    A_initial[i, i] += HIGH_PRECISION(150.0)  # Запобіжник для стабільності
+A_gen = generate_matrix(n)
+np.savetxt('matrix_A.txt', A_gen)
 
-write_matrix_to_file("matrix_A.txt", A_initial)
+x_exact = np.full(n, 2.5, dtype=np.float128)
+B_gen = np.dot(A_gen, x_exact)
+np.savetxt('vector_B.txt', B_gen)
 
-# Формуємо точний вектор розв'язку x_j = 2.5
-X_exact = np.full(n, 2.5, dtype=HIGH_PRECISION)
-B_original = mat_vec_mult(A_initial, X_exact)
+A = np.loadtxt('matrix_A.txt', dtype=np.float128)
+B = np.loadtxt('vector_B.txt', dtype=np.float128)
 
-write_vector_to_file("vector_B.txt", B_original)
+x0 = np.full(n, 1.0, dtype=np.float128)
 
+x_simple, iters_simple, err_simple = simple_iteration(A, B, x0, eps)
+x_jacobi, iters_jacobi, err_jacobi = jacobi(A, B, x0, eps)
+x_seidel, iters_seidel, err_seidel = gauss_seidel(A, B, x0, eps)
 
-A = read_matrix_from_file("matrix_A.txt")
-B = read_vector_from_file("vector_B.txt")
+with open('results_X.txt', 'w') as f:
+    f.write("Simple Iteration Results:\n")
+    np.savetxt(f, x_simple, fmt='%.30e')
+    f.write(f"Iterations: {iters_simple}, Error: {err_simple}\n\n")
 
-L, U = lu_decomposition(A)
-write_matrix_to_file("matrix_L.txt", L)
-write_matrix_to_file("matrix_U.txt", U)
+    f.write("Jacobi Results:\n")
+    np.savetxt(f, x_jacobi, fmt='%.30e')
+    f.write(f"Iterations: {iters_jacobi}, Error: {err_jacobi}\n\n")
 
+    f.write("Gauss-Seidel Results:\n")
+    np.savetxt(f, x_seidel, fmt='%.30e')
+    f.write(f"Iterations: {iters_seidel}, Error: {err_seidel}\n")
 
-X0 = solve_lu(L, U, B)
-
-B_calc = mat_vec_mult(A, X0)
-residual = vector_sub(B_calc, B)
-eps_initial = vector_norm(residual)
-print(f"Початкова похибка (eps) після LU-розкладу: {eps_initial:.4e}")
-
-
-eps0 = HIGH_PRECISION(1e-14)
-iterations = 0
-max_iterations = 500
-X_current = X0.copy()
-
-while iterations < max_iterations:
-    iterations += 1
-
-
-    B0 = mat_vec_mult(A, X_current)
-    R = vector_sub(B, B0)
-
-    delta_X = solve_lu(L, U, R)
-
-
-    X_next = vector_add(X_current, delta_X)
-
-
-    norm_delta_X = vector_norm(delta_X)
-    norm_residual = vector_norm(vector_sub(mat_vec_mult(A, X_next), B))
-
-    if norm_delta_X <= eps0 and norm_residual <= eps0:
-        X_current = X_next
-        break
-
-    X_current = X_next
-
-print(f"Кількість ітерацій для досягнення точності: {iterations}")
-print(f"Кінцева похибка (нев'язка) після уточнення: {norm_residual:.4e}")
+print(f"Метод простої ітерації: {iters_simple} ітерацій, похибка: {err_simple}")
+print(f"Метод Якобі: {iters_jacobi} ітерацій, похибка: {err_jacobi}")
+print(f"Метод Гауса-Зейделя: {iters_seidel} ітерацій, похибка: {err_seidel}")
